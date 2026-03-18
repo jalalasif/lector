@@ -9,7 +9,7 @@ import {
   chapterWordIndex,
 } from '@/lib/rsvp'
 import { cleanExtractedPdfText, countWords } from '@/lib/pdfText'
-import { sounds, initSounds } from '@/lib/sounds'
+import { sounds, initSounds, setVolume } from '@/lib/sounds'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ChapterItem {
@@ -49,6 +49,7 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [volume, setVolumeState] = useState(0.5)
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -59,6 +60,16 @@ export default function Home() {
     try {
       const savedTheme = localStorage.getItem('rsvp_theme')
       if (savedTheme === 'light' || savedTheme === 'dark') setTheme(savedTheme)
+
+      const saved = localStorage.getItem('rsvp_volume')
+      if (saved !== null) {
+        const v = parseFloat(saved)
+        if (!Number.isNaN(v)) {
+          const clamped = Math.max(0, Math.min(1, v))
+          setVolumeState(clamped)
+          setVolume(clamped)
+        }
+      }
 
       const savedPrefs = localStorage.getItem(PREFS_KEY)
       if (savedPrefs) setPrefs(JSON.parse(savedPrefs))
@@ -99,6 +110,13 @@ export default function Home() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reader, prefs.chunkSize])
+
+  // ── Volume: persist and apply
+  useEffect(() => {
+    if (!mounted) return
+    localStorage.setItem('rsvp_volume', String(volume))
+    setVolume(volume)
+  }, [volume, mounted])
 
   // ── Save prefs
   useEffect(() => {
@@ -564,6 +582,23 @@ export default function Home() {
               {showSettings && (
                 <div style={styles.settingsPanel}>
                   <div style={styles.settingsRule} />
+
+                  {/* Sound volume */}
+                  <div style={styles.settingRow}>
+                    <div style={styles.settingLabelGroup}>
+                      <span style={styles.settingLabel}>Sound volume</span>
+                      <span style={styles.settingValue}>{Math.round(volume * 100)}%</span>
+                    </div>
+                    <input
+                      type="range" min={0} max={1} step={0.05}
+                      value={volume}
+                      onChange={e => setVolumeState(parseFloat(e.target.value))}
+                      style={styles.slider}
+                    />
+                    <div style={styles.sliderLabels}>
+                      <span>0%</span><span>100%</span>
+                    </div>
+                  </div>
 
                   {/* WPM */}
                   <div style={styles.settingRow}>

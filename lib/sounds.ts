@@ -5,6 +5,15 @@
  */
 
 let audioContext: AudioContext | null = null
+let masterVolume = 0.5
+
+export function setVolume(v: number): void {
+  masterVolume = Math.max(0, Math.min(1, v))
+}
+
+export function getVolume(): number {
+  return masterVolume
+}
 
 export function initSounds(): void {
   if (typeof window === 'undefined') return
@@ -66,7 +75,7 @@ export const sounds = {
     const ctx = ensureContext()
     if (!ctx) return
     try {
-      playClick(ctx, 30, 800, 0.18)
+      playClick(ctx, 30, 800, 0.55 * masterVolume)
     } catch {
       // ignore
     }
@@ -76,7 +85,7 @@ export const sounds = {
     const ctx = ensureContext()
     if (!ctx) return
     try {
-      playClick(ctx, 30, 500, 0.15)
+      playClick(ctx, 30, 500, 0.45 * masterVolume)
     } catch {
       // ignore
     }
@@ -86,7 +95,7 @@ export const sounds = {
     const ctx = ensureContext()
     if (!ctx) return
     try {
-      playClick(ctx, 15, 1000, 0.12)
+      playClick(ctx, 15, 1000, 0.35 * masterVolume)
     } catch {
       // ignore
     }
@@ -97,8 +106,8 @@ export const sounds = {
     if (!ctx) return
     try {
       const now = ctx.currentTime
-      playClick(ctx, 20, 700, 0.14, now)
-      playClick(ctx, 20, 700, 0.1, now + 0.04)
+      playClick(ctx, 20, 700, 0.5 * masterVolume, now)
+      playClick(ctx, 20, 700, 0.4 * masterVolume, now + 0.04)
     } catch {
       // ignore
     }

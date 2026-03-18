@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { sounds, initSounds } from './sounds'
+import { sounds, initSounds, setVolume, getVolume } from './sounds'
 
 describe('sounds', () => {
   it('imports without throwing in a node environment (no DOM/AudioContext at import time)', () => {
@@ -51,6 +51,33 @@ describe('sounds', () => {
 
     it('toggle() does not throw', () => {
       expect(() => sounds.toggle()).not.toThrow()
+    })
+  })
+
+  describe('setVolume', () => {
+    it('clamps values below 0 to 0', () => {
+      setVolume(-0.5)
+      expect(getVolume()).toBe(0)
+      setVolume(-1)
+      expect(getVolume()).toBe(0)
+    })
+
+    it('clamps values above 1 to 1', () => {
+      setVolume(1.5)
+      expect(getVolume()).toBe(1)
+      setVolume(2)
+      expect(getVolume()).toBe(1)
+    })
+
+    it('sets valid mid-range values correctly', () => {
+      setVolume(0.5)
+      expect(getVolume()).toBe(0.5)
+      setVolume(0)
+      expect(getVolume()).toBe(0)
+      setVolume(1)
+      expect(getVolume()).toBe(1)
+      setVolume(0.75)
+      expect(getVolume()).toBe(0.75)
     })
   })
 })
