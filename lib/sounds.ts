@@ -1,6 +1,7 @@
 /**
- * Soft click UI sounds via Web Audio API. No audio files, no external deps.
- * Uses a single shared AudioContext; call initSounds() once inside a user gesture
+ * Glass-like tonal UI sounds via Web Audio API. No audio files, no external deps.
+ * White noise through lowpass filter for soft click character.
+ * Single shared AudioContext; call initSounds() once inside a user gesture
  * (e.g. first button click) to unlock audio.
  */
 
@@ -37,35 +38,43 @@ function ensureContext(): AudioContext | null {
   return audioContext && audioContext.state === 'running' ? audioContext : null
 }
 
-function playClick(
-  ctx: AudioContext,
-  durationMs: number,
-  lowpassHz: number,
-  gain: number,
-  startTime: number = ctx.currentTime
-): void {
-  const durationSec = durationMs / 1000
-  const sampleRate = ctx.sampleRate
-  const numSamples = Math.max(1, Math.floor(sampleRate * durationSec))
-  const buffer = ctx.createBuffer(1, numSamples, sampleRate)
-  const channel = buffer.getChannelData(0)
-  for (let i = 0; i < numSamples; i++) {
-    channel[i] = (Math.random() * 2 - 1)
-  }
+const NOISE_SAMPLES = 2048
 
+function createNoiseBuffer(ctx: AudioContext): AudioBuffer {
+  const buffer = ctx.createBuffer(1, NOISE_SAMPLES, ctx.sampleRate)
+  const channel = buffer.getChannelData(0)
+  for (let i = 0; i < NOISE_SAMPLES; i++) {
+    channel[i] = Math.random() * 2 - 1
+  }
+  return buffer
+}
+
+function playNoiseClick(
+  ctx: AudioContext,
+  lowpassHz: number,
+  attackSec: number,
+  decaySec: number,
+  peakGain: number,
+  stopAtSec: number
+): void {
+  const t0 = ctx.currentTime
+  const buffer = createNoiseBuffer(ctx)
   const source = ctx.createBufferSource()
   source.buffer = buffer
-  source.start(startTime)
-  source.stop(startTime + durationSec)
+  source.start(t0)
+  source.stop(t0 + stopAtSec)
 
   const filter = ctx.createBiquadFilter()
   filter.type = 'lowpass'
   filter.frequency.value = lowpassHz
-  source.connect(filter)
+  filter.Q.value = 1
 
   const gainNode = ctx.createGain()
-  gainNode.gain.setValueAtTime(gain, startTime)
-  gainNode.gain.linearRampToValueAtTime(0, startTime + durationSec)
+  gainNode.gain.setValueAtTime(0, t0)
+  gainNode.gain.linearRampToValueAtTime(peakGain, t0 + attackSec)
+  gainNode.gain.linearRampToValueAtTime(0, t0 + attackSec + decaySec)
+
+  source.connect(filter)
   filter.connect(gainNode)
   gainNode.connect(ctx.destination)
 }
@@ -75,7 +84,8 @@ export const sounds = {
     const ctx = ensureContext()
     if (!ctx) return
     try {
-      playClick(ctx, 30, 800, 0.55 * masterVolume)
+      const t0 = ctx.currentTime
+      playNoiseClick(ctx, 800, 0.002, 0.03, 0.9 * masterVolume, 0.035)
     } catch {
       // ignore
     }
@@ -85,7 +95,7 @@ export const sounds = {
     const ctx = ensureContext()
     if (!ctx) return
     try {
-      playClick(ctx, 30, 500, 0.45 * masterVolume)
+      playNoiseClick(ctx, 500, 0.002, 0.03, 0.75 * masterVolume, 0.035)
     } catch {
       // ignore
     }
@@ -95,7 +105,7 @@ export const sounds = {
     const ctx = ensureContext()
     if (!ctx) return
     try {
-      playClick(ctx, 15, 1000, 0.35 * masterVolume)
+      playNoiseClick(ctx, 1000, 0.001, 0.015, 0.6 * masterVolume, 0.02)
     } catch {
       // ignore
     }
@@ -105,9 +115,30 @@ export const sounds = {
     const ctx = ensureContext()
     if (!ctx) return
     try {
-      const now = ctx.currentTime
-      playClick(ctx, 20, 700, 0.5 * masterVolume, now)
-      playClick(ctx, 20, 700, 0.4 * masterVolume, now + 0.04)
+      const t0 = ctx.currentTime
+      // First click
+      playNoiseClick(ctx, 700, 0.001, 0.02, 0.7 * masterVolume, 0.025)
+      // Second click 50ms later
+      const t1 = t0 + 0.05
+      const buffer = createNoiseBuffer(ctx)
+      const source = ctx.createBufferSource()
+      source.buffer = buffer
+      source.start(t1)
+      source.stop(t1 + 0.025)
+
+      const filter = ctx.createBiquadFilter()
+      filter.type = 'lowpass'
+      filter.frequency.value = 700
+      filter.Q.value = 1
+
+      const gainNode = ctx.createGain()
+      gainNode.gain.setValueAtTime(0, t1)
+      gainNode.gain.linearRampToValueAtTime(0.55 * masterVolume, t1 + 0.001)
+      gainNode.gain.linearRampToValueAtTime(0, t1 + 0.021)
+
+      source.connect(filter)
+      filter.connect(gainNode)
+      gainNode.connect(ctx.destination)
     } catch {
       // ignore
     }
