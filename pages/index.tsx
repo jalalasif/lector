@@ -148,7 +148,8 @@ export default function Home() {
     try {
       if (isPdf) {
         const pdfjsLib = await import('pdfjs-dist')
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`
 
         const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
           const reader = new FileReader()
@@ -179,7 +180,7 @@ export default function Home() {
         const wordCount = countWords(text)
 
         type OutlineNode = { title?: string; dest?: string | unknown[] | null; items?: OutlineNode[] }
-        function collectOutlineItems(nodes: OutlineNode[] | null | undefined): { title: string; dest: string | unknown[] | null }[] {
+        const collectOutlineItems = (nodes: OutlineNode[] | null | undefined): { title: string; dest: string | unknown[] | null }[] => {
           if (!nodes || !Array.isArray(nodes)) return []
           const result: { title: string; dest: string | unknown[] | null }[] = []
           for (const node of nodes) {
@@ -192,16 +193,14 @@ export default function Home() {
           }
           return result
         }
-        function isRefLike(v: unknown): v is { num: number; gen: number } {
-          return (
-            v !== null &&
-            typeof v === 'object' &&
-            'num' in v &&
-            'gen' in v &&
-            typeof (v as { num: unknown }).num === 'number' &&
-            typeof (v as { gen: unknown }).gen === 'number'
-          )
-        }
+        const isRefLike = (v: unknown): v is { num: number; gen: number } => (
+          v !== null &&
+          typeof v === 'object' &&
+          'num' in v &&
+          'gen' in v &&
+          typeof (v as { num: unknown }).num === 'number' &&
+          typeof (v as { gen: unknown }).gen === 'number'
+        )
 
         let chapters: ChapterItem[] = []
         const rawOutline = await pdf.getOutline()
@@ -240,22 +239,74 @@ export default function Home() {
         setIndex(0)
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerState: state, savedIndex: 0 }))
       } else {
-        const formData = new FormData()
-        formData.append('epub', file)
-        const res = await fetch('/api/parse-epub', { method: 'POST', body: formData })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error ?? 'Parse failed')
+        const blobUrl = URL.createObjectURL(file)
+        try {
+          const { default: ePub } = await import('epubjs')
+          const book = ePub(blobUrl)
+          await book.ready
 
-        const state: ReaderState = {
-          text: data.text,
-          fileName: file.name,
-          wordCount: data.wordCount,
-          pages: data.pages,
-          chapters: data.chapters ?? [],
+          const spine = book.spine
+          const spineWordCounts: number[] = []
+          const spineTexts: string[] = []
+
+          function stripHtml(html: string): string {
+            return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+          }
+
+          const hrefToIdx = new Map<string, number>()
+
+          for (let i = 0; i < spine.length; i++) {
+            const section = spine.get(i)
+            const href = String(section?.href ?? '')
+            if (href) {
+              hrefToIdx.set(href, i)
+              const filename = href.split('/').pop() ?? ''
+              if (filename) hrefToIdx.set(filename, i)
+            }
+            const contents = await section.load(book.load.bind(book))
+            const raw = contents?.textContent ?? ''
+            const plain = stripHtml(raw)
+            spineTexts.push(plain)
+            spineWordCounts.push(countWords(plain))
+          }
+
+          const fullText = spineTexts.join('\n\n')
+          const wordCount = countWords(fullText)
+          const numPages = spine.length
+
+          const chapters: ChapterItem[] = []
+          const toc = book.navigation?.toc ?? []
+          for (const tocEntry of toc) {
+            const title = (tocEntry as { title?: string }).title
+            if (!title) continue
+            const href = String((tocEntry as { href?: string }).href ?? '')
+            const baseHref = href.split('#')[0]
+            const spineIdx =
+              hrefToIdx.get(baseHref) ??
+              hrefToIdx.get(baseHref.split('/').pop() ?? '') ??
+              0
+
+            let wordIndex = 0
+            for (let j = 0; j < spineIdx; j++) {
+              wordIndex += spineWordCounts[j]
+            }
+
+            chapters.push({ title, wordIndex })
+          }
+
+          const state: ReaderState = {
+            text: fullText,
+            fileName: file.name,
+            wordCount,
+            pages: numPages,
+            chapters,
+          }
+          setReader(state)
+          setIndex(0)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerState: state, savedIndex: 0 }))
+        } finally {
+          URL.revokeObjectURL(blobUrl)
         }
-        setReader(state)
-        setIndex(0)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerState: state, savedIndex: 0 }))
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to parse PDF')
