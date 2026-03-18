@@ -549,17 +549,8 @@ export default function Home() {
       />
 
       <style>{`
-        @keyframes flash {
-          0% { opacity: 0; transform: translateY(6px); }
-          15% { opacity: 1; transform: translateY(0); }
-          85% { opacity: 1; transform: translateY(0); }
-          100% { opacity: 1; transform: translateY(0); }
-        }
         @keyframes spin {
           to { transform: rotate(360deg); }
-        }
-        .word-flash {
-          animation: flash 0.12s ease-out forwards;
         }
       `}</style>
     </>
@@ -899,7 +890,7 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.2,
     textAlign: 'center',
     display: 'block',
-    animation: 'flash 0.1s ease-out forwards',
+    animation: 'wordEnter 0.18s ease-out forwards',
   },
 
   // Controls
