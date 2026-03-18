@@ -42,3 +42,17 @@ export function minutesRemaining(
   const wordsLeft = remainingChunks * Math.max(1, chunkSize)
   return Math.round(wordsLeft / w)
 }
+
+/**
+ * Returns the word index of the first word on the given page (0-based).
+ * Sums word counts for all pages before pageNumber. Used to map outline
+ * destination pages to positions in the flat token array.
+ */
+export function chapterWordIndex(pageNumber: number, pageWordCounts: number[]): number {
+  if (!pageWordCounts.length || pageNumber <= 0) return 0
+  let sum = 0
+  for (let i = 0; i < pageNumber && i < pageWordCounts.length; i++) {
+    sum += pageWordCounts[i]
+  }
+  return sum
+}

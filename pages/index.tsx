@@ -9,11 +9,17 @@ import {
 } from '@/lib/rsvp'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+interface ChapterItem {
+  title: string
+  wordIndex: number
+}
+
 interface ReaderState {
   text: string
   fileName: string
   wordCount: number
   pages: number
+  chapters: ChapterItem[]
 }
 
 interface Prefs {
@@ -53,6 +59,9 @@ export default function Home() {
       const savedSession = localStorage.getItem(STORAGE_KEY)
       if (savedSession) {
         const { readerState, savedIndex } = JSON.parse(savedSession)
+        if (readerState && !Array.isArray(readerState.chapters)) {
+          readerState.chapters = []
+        }
         setReader(readerState)
         setIndex(savedIndex ?? 0)
       }
@@ -127,6 +136,7 @@ export default function Home() {
         fileName: file.name,
         wordCount: data.wordCount,
         pages: data.pages,
+        chapters: data.chapters ?? [],
       }
       setReader(state)
       setIndex(0)
@@ -271,6 +281,51 @@ export default function Home() {
                 <span style={styles.bookName}>{reader.fileName.replace('.pdf', '')}</span>
                 <span style={styles.bookDivider}>·</span>
                 <span style={styles.bookStats}>{reader.pages} pages · {reader.wordCount.toLocaleString()} words</span>
+              </div>
+
+              {/* Chapter selector */}
+              <div style={styles.chapterWrap}>
+                <select
+                  style={{
+                    ...styles.chapterSelect,
+                    ...(reader.chapters.length === 0 ? styles.chapterSelectDisabled : {}),
+                  }}
+                  value={
+                    reader.chapters.length === 0
+                      ? ''
+                      : (() => {
+                          const currentWordIndex = index * prefs.chunkSize
+                          let activeIdx = -1
+                          for (let i = reader.chapters.length - 1; i >= 0; i--) {
+                            if (reader.chapters[i].wordIndex <= currentWordIndex) {
+                              activeIdx = i
+                              break
+                            }
+                          }
+                          return activeIdx >= 0 ? String(activeIdx) : ''
+                        })()
+                  }
+                  disabled={reader.chapters.length === 0}
+                  onChange={e => {
+                    if (reader.chapters.length === 0) return
+                    const i = Number(e.target.value)
+                    if (Number.isNaN(i) || i < 0 || i >= reader.chapters.length) return
+                    const ch = reader.chapters[i]
+                    setPlaying(false)
+                    setIndex(Math.floor(ch.wordIndex / prefs.chunkSize))
+                  }}
+                  aria-label="Jump to chapter"
+                >
+                  {reader.chapters.length === 0 ? (
+                    <option value="">No chapters found</option>
+                  ) : (
+                    reader.chapters.map((ch, i) => (
+                      <option key={i} value={i}>
+                        {ch.title}
+                      </option>
+                    ))
+                  )}
+                </select>
               </div>
 
               {/* Progress bar */}
@@ -659,6 +714,34 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '14px',
     color: 'var(--muted)',
     letterSpacing: '0.04em',
+  },
+
+  chapterWrap: {
+    width: '100%',
+    marginBottom: '24px',
+  },
+  chapterSelect: {
+    width: '100%',
+    padding: '10px 36px 10px 14px',
+    fontFamily: "'Cormorant Garamond', Georgia, serif",
+    fontSize: '15px',
+    fontWeight: 400,
+    color: 'var(--text)',
+    background: 'var(--bg)',
+    border: '1px solid var(--gold-border)',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    appearance: 'none',
+    WebkitAppearance: 'none',
+    MozAppearance: 'none',
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23c9a96e' d='M6 8L2 4h8z'/%3E%3C/svg%3E")`,
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'right 12px center',
+  },
+  chapterSelectDisabled: {
+    color: 'var(--muted)',
+    borderColor: 'rgba(201, 169, 110, 0.4)',
+    cursor: 'default',
   },
 
   // Progress

@@ -5,6 +5,7 @@ import {
   progressPercent,
   wordsReadEstimate,
   minutesRemaining,
+  chapterWordIndex,
 } from './rsvp'
 
 describe('tokenize', () => {
@@ -78,5 +79,26 @@ describe('minutesRemaining', () => {
 
   it('guards wpm at 1', () => {
     expect(minutesRemaining(0, 60, 1, 0)).toBe(60)
+  })
+})
+
+describe('chapterWordIndex', () => {
+  it('returns 0 for first page (pageNumber 0)', () => {
+    expect(chapterWordIndex(0, [10, 20, 30])).toBe(0)
+  })
+
+  it('returns correct index for middle page', () => {
+    // page 0: 0, page 1: 10, page 2: 30
+    expect(chapterWordIndex(1, [10, 20, 30])).toBe(10)
+    expect(chapterWordIndex(2, [10, 20, 30])).toBe(30)
+  })
+
+  it('returns correct index for last page', () => {
+    expect(chapterWordIndex(3, [10, 20, 30])).toBe(60)
+  })
+
+  it('returns 0 for empty pageWordCounts array', () => {
+    expect(chapterWordIndex(0, [])).toBe(0)
+    expect(chapterWordIndex(5, [])).toBe(0)
   })
 })
