@@ -100,3 +100,13 @@ input[type="range"]::-moz-range-thumb {
   background: var(--gold);
   border: none;
 }
+
+/* Focus mode: blur/dim non-focal content when playing */
+.focus-blur-transition {
+  transition: filter 0.6s ease, opacity 0.6s ease;
+}
+.focus-blur {
+  filter: blur(4px);
+  opacity: 0.15;
+  pointer-events: none;
+}

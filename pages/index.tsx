@@ -213,7 +213,8 @@ export default function Home() {
 
       <div style={styles.root}>
         {/* ── Header */}
-        <header style={styles.header}>
+        <div className={`focus-blur-transition ${playing ? 'focus-blur' : ''}`}>
+          <header style={styles.header}>
           <div style={styles.headerInner}>
             <div style={styles.wordmark}>
               <span style={styles.wordmarkL}>L</span>
@@ -253,6 +254,7 @@ export default function Home() {
           </div>
           <div style={styles.headerRule} />
         </header>
+        </div>
 
         <main style={styles.main}>
           {/* ── Upload State */}
@@ -320,7 +322,8 @@ export default function Home() {
           {/* ── Reader State */}
           {reader && chunks.length > 0 && (
             <div style={styles.readerSection}>
-              {/* Book info */}
+              {/* Book meta, chapter selector, progress bar */}
+              <div className={`focus-blur-transition ${playing ? 'focus-blur' : ''}`}>
               <div style={styles.bookMeta}>
                 <span style={styles.bookName}>{reader.fileName.replace('.pdf', '')}</span>
                 <span style={styles.bookDivider}>·</span>
@@ -382,6 +385,7 @@ export default function Home() {
                   <span style={styles.progressStat}>{progress.toFixed(1)}%</span>
                   <span style={styles.progressStat}>{minutesLeft} min left</span>
                 </div>
+              </div>
               </div>
 
               {/* Display window */}
@@ -450,6 +454,8 @@ export default function Home() {
                 </button>
               </div>
 
+              {/* Settings panel + keyboard hint */}
+              <div className={`focus-blur-transition ${playing ? 'focus-blur' : ''}`}>
               {/* Settings Panel */}
               {showSettings && (
                 <div style={styles.settingsPanel}>
@@ -515,14 +521,17 @@ export default function Home() {
               <p style={styles.hint}>
                 Press <kbd style={styles.kbd}>Space</kbd> to play · <kbd style={styles.kbd}>←</kbd> <kbd style={styles.kbd}>→</kbd> to step
               </p>
+              </div>
             </div>
           )}
         </main>
 
+        <div className={`focus-blur-transition ${playing ? 'focus-blur' : ''}`}>
         <footer style={styles.footer}>
           <div style={styles.footerRule} />
           <p style={styles.footerText}>Lector · Reading tool · Everything stays on your machine</p>
         </footer>
+        </div>
       </div>
 
       <KeyboardHandler
