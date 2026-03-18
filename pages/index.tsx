@@ -500,10 +500,7 @@ export default function Home() {
                 <div style={styles.focalGuide} />
 
                 <div style={styles.wordDisplay}>
-                  <span
-                    key={index}
-                    style={{ ...styles.wordText, fontSize: `${prefs.fontSize}px` }}
-                  >
+                  <span style={{ ...styles.wordText, fontSize: `${prefs.fontSize}px` }}>
                     {currentChunk}
                   </span>
                 </div>
@@ -987,7 +984,6 @@ const styles: Record<string, React.CSSProperties> = {
     lineHeight: 1.2,
     textAlign: 'center',
     display: 'block',
-    animation: 'wordEnter 0.18s ease-out forwards',
   },
 
   // Controls
