@@ -1,10 +1,21 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { sounds } from './sounds'
+import { sounds, initSounds } from './sounds'
 
 describe('sounds', () => {
   it('imports without throwing in a node environment (no DOM/AudioContext at import time)', () => {
     expect(sounds).toBeDefined()
     expect(typeof sounds).toBe('object')
+  })
+
+  it('initSounds is an exported function', () => {
+    expect(typeof initSounds).toBe('function')
+  })
+
+  it('calling initSounds() when window is undefined does not throw', () => {
+    const originalWindow = globalThis.window
+    vi.stubGlobal('window', undefined)
+    expect(() => initSounds()).not.toThrow()
+    vi.stubGlobal('window', originalWindow)
   })
 
   it('each method (play, pause, step, toggle) exists and is a function', () => {

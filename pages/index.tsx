@@ -9,7 +9,7 @@ import {
   chapterWordIndex,
 } from '@/lib/rsvp'
 import { cleanExtractedPdfText, countWords } from '@/lib/pdfText'
-import { sounds } from '@/lib/sounds'
+import { sounds, initSounds } from '@/lib/sounds'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ChapterItem {
@@ -134,6 +134,7 @@ export default function Home() {
 
   // ── Upload handler
   const handleFile = useCallback(async (file: File) => {
+    initSounds()
     const isEpub = file.name.endsWith('.epub')
     const isPdf = file.name.endsWith('.pdf')
     if (!isPdf && !isEpub) {
@@ -276,6 +277,7 @@ export default function Home() {
   }, [handleFile])
 
   const togglePlay = useCallback(() => {
+    initSounds()
     setIndex(i => (chunks.length > 0 && i >= chunks.length - 1 ? 0 : i))
     setPlaying(p => {
       if (p) sounds.pause()

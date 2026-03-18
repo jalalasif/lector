@@ -1,105 +1,106 @@
 /**
- * Tonal UI sounds via Web Audio API. No audio files, no external deps.
- * Creates a new AudioContext per call and closes it after the sound completes.
+ * Soft click UI sounds via Web Audio API. No audio files, no external deps.
+ * Uses a single shared AudioContext; call initSounds() once inside a user gesture
+ * (e.g. first button click) to unlock audio.
  */
 
-const VOLUME = 0.07
+let audioContext: AudioContext | null = null
 
-function runInBrowser(fn: (ctx: AudioContext) => void): void {
+export function initSounds(): void {
   if (typeof window === 'undefined') return
   try {
-    const ctx = new AudioContext()
-    fn(ctx)
+    if (!audioContext) {
+      audioContext = new AudioContext()
+    }
+    if (audioContext.state === 'suspended') {
+      void audioContext.resume()
+    }
   } catch {
-    // Silently fail if the browser blocks AudioContext (e.g. autoplay policy, SSR)
+    // Silently fail if the browser blocks AudioContext
   }
 }
 
-function playTone(
-  ctx: AudioContext,
-  freq: number,
-  durationMs: number,
-  attackMs: number,
-  releaseMs: number
-): void {
-  const now = ctx.currentTime
-  const gain = ctx.createGain()
-  gain.gain.setValueAtTime(0, now)
-  gain.gain.linearRampToValueAtTime(VOLUME, now + attackMs / 1000)
-  gain.gain.setValueAtTime(VOLUME, now + (durationMs - releaseMs) / 1000)
-  gain.gain.linearRampToValueAtTime(0, now + durationMs / 1000)
-  gain.connect(ctx.destination)
-
-  const osc = ctx.createOscillator()
-  osc.type = 'sine'
-  osc.frequency.value = freq
-  osc.connect(gain)
-  osc.start(now)
-  osc.stop(now + durationMs / 1000)
+function ensureContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null
+  if (!audioContext || audioContext.state !== 'running') {
+    initSounds()
+  }
+  return audioContext && audioContext.state === 'running' ? audioContext : null
 }
 
-function playToneAt(
+function playClick(
   ctx: AudioContext,
-  freq: number,
   durationMs: number,
-  attackMs: number,
-  releaseMs: number,
-  startTime: number
+  lowpassHz: number,
+  gain: number,
+  startTime: number = ctx.currentTime
 ): void {
-  const gain = ctx.createGain()
-  gain.gain.setValueAtTime(0, startTime)
-  gain.gain.linearRampToValueAtTime(VOLUME, startTime + attackMs / 1000)
-  gain.gain.setValueAtTime(VOLUME, startTime + (durationMs - releaseMs) / 1000)
-  gain.gain.linearRampToValueAtTime(0, startTime + durationMs / 1000)
-  gain.connect(ctx.destination)
+  const durationSec = durationMs / 1000
+  const sampleRate = ctx.sampleRate
+  const numSamples = Math.max(1, Math.floor(sampleRate * durationSec))
+  const buffer = ctx.createBuffer(1, numSamples, sampleRate)
+  const channel = buffer.getChannelData(0)
+  for (let i = 0; i < numSamples; i++) {
+    channel[i] = (Math.random() * 2 - 1)
+  }
 
-  const osc = ctx.createOscillator()
-  osc.type = 'sine'
-  osc.frequency.value = freq
-  osc.connect(gain)
-  osc.start(startTime)
-  osc.stop(startTime + durationMs / 1000)
-}
+  const source = ctx.createBufferSource()
+  source.buffer = buffer
+  source.start(startTime)
+  source.stop(startTime + durationSec)
 
-function scheduleClose(ctx: AudioContext, afterMs: number): void {
-  setTimeout(() => {
-    try {
-      ctx.close()
-    } catch {
-      // ignore
-    }
-  }, afterMs)
+  const filter = ctx.createBiquadFilter()
+  filter.type = 'lowpass'
+  filter.frequency.value = lowpassHz
+  source.connect(filter)
+
+  const gainNode = ctx.createGain()
+  gainNode.gain.setValueAtTime(gain, startTime)
+  gainNode.gain.linearRampToValueAtTime(0, startTime + durationSec)
+  filter.connect(gainNode)
+  gainNode.connect(ctx.destination)
 }
 
 export const sounds = {
   play(): void {
-    runInBrowser(ctx => {
-      playTone(ctx, 440, 80, 12, 20)
-      scheduleClose(ctx, 100)
-    })
+    const ctx = ensureContext()
+    if (!ctx) return
+    try {
+      playClick(ctx, 30, 800, 0.18)
+    } catch {
+      // ignore
+    }
   },
 
   pause(): void {
-    runInBrowser(ctx => {
-      playTone(ctx, 380, 80, 12, 20)
-      scheduleClose(ctx, 100)
-    })
+    const ctx = ensureContext()
+    if (!ctx) return
+    try {
+      playClick(ctx, 30, 500, 0.15)
+    } catch {
+      // ignore
+    }
   },
 
   step(): void {
-    runInBrowser(ctx => {
-      playTone(ctx, 520, 40, 4, 10)
-      scheduleClose(ctx, 60)
-    })
+    const ctx = ensureContext()
+    if (!ctx) return
+    try {
+      playClick(ctx, 15, 1000, 0.12)
+    } catch {
+      // ignore
+    }
   },
 
   toggle(): void {
-    runInBrowser(ctx => {
+    const ctx = ensureContext()
+    if (!ctx) return
+    try {
       const now = ctx.currentTime
-      const gap = 0.03
-      playToneAt(ctx, 440, 60, 12, 15, now)
-      playToneAt(ctx, 550, 60, 12, 15, now + 0.06 + gap)
-      scheduleClose(ctx, 200)
-    })
+      playClick(ctx, 20, 700, 0.14, now)
+      playClick(ctx, 20, 700, 0.1, now + 0.04)
+    } catch {
+      // ignore
+    }
   },
 }
