@@ -148,8 +148,7 @@ export default function Home() {
     try {
       if (isPdf) {
         const pdfjsLib = await import('pdfjs-dist')
-        pdfjsLib.GlobalWorkerOptions.workerSrc =
-          `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.js`
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
 
         const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
           const reader = new FileReader()
