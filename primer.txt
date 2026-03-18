@@ -9,18 +9,22 @@ file layout, and how the pieces fit together.
 ================================================================================
 
 Lector is an RSVP (Rapid Serial Visual Presentation) speed-reading web app.
-Users upload a PDF; the app extracts text and displays it one word (or small
-chunk of words) at a time at a configurable speed. All processing is local:
-PDF parsing runs in a Next.js API route on the same machine; no text is sent
-to external services. Session state (current book + position) and preferences
-(WPM, chunk size, font size) are stored in the browser’s localStorage.
+Users upload a PDF or EPUB; the app extracts text in the browser and displays
+it one word (or small chunk of words) at a time at a configurable speed. All
+processing is client-side: no API routes, no server upload. Session state
+(current book + position) and preferences (WPM, chunk size, font size, theme)
+are stored in the browser’s localStorage.
 
 Key behaviors:
-  - PDF upload via drag-and-drop or file picker (max 50 MB).
+  - PDF and EPUB upload via drag-and-drop or file picker (accept=".pdf,.epub").
   - Display modes: single word, 2-word chunks, or 3-word chunks.
   - Speed: 100–1000 WPM via slider.
   - Font size: 28px–96px.
   - Progress bar: words read, percentage, estimated time remaining.
+  - Chapters: PDF outline / EPUB TOC used for a chapter dropdown; jump to chapter.
+  - Theme: dark (default) or light; persisted in localStorage (rsvp_theme).
+  - Focus mode: when playing, header/meta/progress blur and dim so focus stays on the word.
+  - Optional UI sounds: soft clicks for play, pause, step, toggle (Web Audio API; no files).
   - Resume: last book and position restored from localStorage on load.
   - Keyboard: Space = play/pause, Left/Right = step backward/forward.
 
@@ -31,9 +35,12 @@ Key behaviors:
   - Next.js 14 (Pages Router)
   - React 18
   - TypeScript (strict)
-  - pdf-parse — PDF text extraction (server-side only)
-  - formidable — multipart form parsing for file uploads
-  - Vitest — unit tests for lib/ helpers
+  - pdfjs-dist — PDF text extraction and outline (client-side, in browser)
+  - epubjs — EPUB parsing and TOC (client-side, in browser)
+  - Vitest — unit tests for lib/ helpers (rsvp, pdfText, sounds)
+
+  No server-side PDF/EPUB API: no pdf-parse, no formidable. All parsing runs
+  in the browser.
 
 ================================================================================
 3. FILE STRUCTURE (SOURCE)
@@ -42,31 +49,31 @@ Key behaviors:
   rsvp-reader/
   ├── .gitignore
   ├── next.config.js          # Next.js config (reactStrictMode)
-  ├── package.json             # Scripts, deps, devDeps
+  ├── package.json            # Scripts, deps, devDeps
   ├── primer.txt              # This file
-  ├── README.md                # User-facing setup and features
-  ├── tsconfig.json            # TypeScript + path alias @/* → ./
-  ├── vitest.config.ts         # Vitest: node env, lib/**/*.test.ts, @ alias
+  ├── README.md               # User-facing setup and features
+  ├── tsconfig.json           # TypeScript + path alias @/* → ./
+  ├── vitest.config.ts        # Vitest: node env, lib/**/*.test.ts, @ alias
   │
-  ├── lib/                     # Shared, testable logic (no React/Next)
-  │   ├── rsvp.ts              # Tokenization, chunking, progress, time estimates
-  │   ├── rsvp.test.ts         # Unit tests for rsvp.ts
-  │   ├── pdfText.ts           # PDF text cleanup and word count
-  │   └── pdfText.test.ts      # Unit tests for pdfText.ts
+  ├── lib/                    # Shared, testable logic (no React/Next in lib)
+  │   ├── rsvp.ts             # Tokenization, chunking, progress, time estimates, chapterWordIndex
+  │   ├── rsvp.test.ts        # Unit tests for rsvp.ts
+  │   ├── pdfText.ts          # PDF text cleanup and word count
+  │   ├── pdfText.test.ts     # Unit tests for pdfText.ts
+  │   ├── sounds.ts          # Web Audio API UI sounds (play, pause, step, toggle)
+  │   └── sounds.test.ts      # Unit tests for sounds.ts
   │
-  ├── pages/                   # Next.js Pages Router
-  │   ├── _app.tsx             # App shell; imports globals.css
-  │   ├── index.tsx            # Single page: upload UI + reader UI + logic
-  │   └── api/
-  │       └── parse-pdf.ts     # POST API: accept PDF, return { text, pages, wordCount }
+  ├── pages/                  # Next.js Pages Router (no api/ folder)
+  │   ├── _app.tsx            # App shell; imports globals.css
+  │   └── index.tsx           # Single page: upload UI + reader UI + all client logic
   │
   └── styles/
-      └── globals.css          # CSS variables, reset, fonts, range inputs
+      └── globals.css         # CSS variables (dark + light), reset, fonts, range inputs, focus-blur
 
   Generated / ignored (not in repo):
-  - .next/                     # Next build output
-  - node_modules/               # Dependencies
-  - next-env.d.ts               # Next-generated TypeScript env (optional commit)
+  - .next/                    # Next build output
+  - node_modules/              # Dependencies
+  - next-env.d.ts              # Next-generated TypeScript env (optional commit)
 
 ================================================================================
 4. MAJOR FILES — WHAT EACH DOES
@@ -79,75 +86,76 @@ Key behaviors:
 
 --- pages/index.tsx
   - The only page: upload + reader UI and all client state.
-  - State: reader (extracted text + metadata or null), prefs (wpm, chunkSize, fontSize),
-    chunks (array of strings), index (current chunk), playing, dragOver, loading,
-    error, showSettings, mounted.
-  - On mount: reads localStorage (PREFS_KEY, STORAGE_KEY), restores prefs and
-    last session (reader + index).
-  - When reader or chunkSize changes: tokenizes reader.text via lib/rsvp,
-    builds chunks, rescales index proportionally.
-  - Persists: prefs and session (reader + index) to localStorage when they change.
-  - Playback: when playing is true, a setInterval advances index at (60000/wpm)*chunkSize
-    ms per chunk; stops at last chunk.
-  - Upload: handleFile validates .pdf, POSTs to /api/parse-pdf with FormData,
-    then sets reader and index to 0.
-  - Renders:
-    - Header with wordmark and “New Book” when a book is loaded.
-    - If !reader: upload section (drop zone, file input, error message).
-    - If reader && chunks.length === 0: “No text found” + button to clear and re-upload.
-    - If reader && chunks.length > 0: book meta, progress bar, word/chunk display,
-      play/pause/step/settings controls, settings panel (WPM, chunk size, font size),
-      keyboard hint.
-  - KeyboardHandler: listens for Space / ArrowLeft / ArrowRight when a book is
-    loaded and chunks exist; triggers togglePlay and step handlers.
-  - Styles: large inline “styles” object (React.CSSProperties) using CSS vars
-    from globals.css (e.g. --bg, --text, --gold). Inline keyframe + class for
-    word flash and spinner.
-
---- pages/api/parse-pdf.ts
-  - Next.js API route: POST only; body is multipart with field "pdf" (file).
-  - Disables Next’s default body parser (config.api.bodyParser = false) so
-    formidable can read the raw request.
-  - Uses formidable to parse the request (max 50 MB); gets the first file from
-    files.pdf (array or single file).
-  - Reads file from temp filepath into a Buffer, requires pdf-parse dynamically,
-    extracts text and numpages.
-  - Runs cleaned text through lib/pdfText (cleanExtractedPdfText, countWords)
-    and returns JSON: { text, pages, wordCount }.
-  - Always deletes the temp upload file in a finally block.
-  - Errors: 405 for non-POST, 400 when no PDF, 500 on parse/form errors; avoids
-    double response when headers already sent.
+  - State: reader (text, fileName, wordCount, pages, chapters), prefs (wpm, chunkSize, fontSize),
+    chunks, index, playing, dragOver, loading, error, showSettings, mounted, theme (dark|light).
+  - On mount: reads localStorage (PREFS_KEY, STORAGE_KEY, rsvp_theme), restores prefs, theme,
+    and last session (reader + index). Normalizes readerState.chapters to array if missing.
+  - Theme: applied via document.documentElement.dataset.theme = 'light' (dark = no attribute);
+    CSS [data-theme="light"] in globals.css overrides :root variables.
+  - When reader or chunkSize changes: tokenizes reader.text via lib/rsvp, builds chunks,
+    rescales index proportionally.
+  - Persists: prefs, theme, and session (reader + index) to localStorage when they change.
+  - Playback: when playing, setInterval advances index at (60000/wpm)*chunkSize ms per chunk;
+    stops at last chunk; sounds.play() / sounds.pause() on toggle.
+  - Upload: handleFile validates .pdf or .epub.
+    - PDF: FileReader → ArrayBuffer → pdfjs-dist getDocument; getPage(i) → getTextContent →
+      items[].str joined per page; pageWordCounts for chapter mapping; getOutline() →
+      collectOutlineItems → page index → chapterWordIndex(pageIndex, pageWordCounts) →
+      chapters[{ title, wordIndex }]. Full text cleaned with lib/pdfText.
+    - EPUB: URL.createObjectURL(file) → epubjs(blobUrl); spine sections loaded, inner
+      HTML stripped to plain text; navigation.toc mapped to spine indices and word offsets
+      for chapters. Blob URL revoked in finally.
+  - Renders: header (wordmark, theme toggle, “New Book” when loaded); upload section when
+    !reader; “No text found” when reader but chunks.length === 0; when reader && chunks:
+    book meta, chapter <select>, progress bar, word/chunk display, play/pause/step/settings,
+    settings panel (WPM, chunk size, font size), keyboard hint. Focus-blur class on header
+    and meta when playing.
+  - KeyboardHandler: Space / ArrowLeft / ArrowRight when book loaded and chunks exist;
+    initSounds() and sounds used on interaction.
+  - Styles: large inline “styles” object (React.CSSProperties) using CSS vars from
+    globals.css (--bg, --text, --gold, etc.). Inline keyframe + class for word animation
+    and spinner.
 
 --- lib/rsvp.ts
   - Pure functions used by the UI (and tests). No React, no Node APIs.
   - tokenize(text): split on whitespace, filter empty → string[].
   - buildChunks(words, size): for size 1 returns words; for 2/3 returns array of
     "word1 word2" etc.; last chunk may be shorter.
-  - progressPercent(index, totalChunks): 0–100; avoids division by zero when
-    totalChunks is 0 or 1 (single chunk = 100%).
-  - wordsReadEstimate(index, totalChunks, totalWords): approximate words “read”
-    for progress display.
+  - progressPercent(index, totalChunks): 0–100; single-chunk content = 100%.
+  - wordsReadEstimate(index, totalChunks, totalWords): approximate words “read”.
   - minutesRemaining(index, totalChunks, chunkSize, wpm): estimated minutes left;
     guards wpm with Math.max(1, wpm).
+  - chapterWordIndex(pageNumber, pageWordCounts): returns word index of first word
+    on the given page (0-based); used to map PDF outline / EPUB TOC to chunk index.
 
 --- lib/pdfText.ts
-  - cleanExtractedPdfText(raw): normalizes \r\n → \n, collapses 3+ newlines to
-    \n\n, trims. Used on server after pdf-parse.
-  - countWords(text): same definition as UI (split on whitespace, filter Boolean).
-  Ensures API and UI use the same word count.
+  - cleanExtractedPdfText(raw): normalizes \r\n → \n, collapses 3+ newlines to \n\n,
+    trims. Used on client after pdfjs-dist text extraction.
+  - countWords(text): split on whitespace, filter Boolean. Same definition as UI
+    so word counts are consistent.
+
+--- lib/sounds.ts
+  - Web Audio API: single shared AudioContext; initSounds() unlocks context (call once
+    from a user gesture, e.g. first button click).
+  - Generates short “click” tones (no audio files): white noise through lowpass + gain.
+  - sounds.play(), sounds.pause(), sounds.step(), sounds.toggle() used by index.tsx
+    for play/pause/step and theme/new-book actions.
 
 --- styles/globals.css
-  - Imports Cormorant Garamond from Google Fonts.
-  - :root defines palette: --bg, --text, --gold, --gold-dim, --gold-border,
+  - Imports Cormorant Garamond and Cormorant from Google Fonts.
+  - :root defines dark palette: --bg, --text, --gold, --gold-dim, --gold-border,
     --surface, --surface-2, --muted, --muted-2.
-  - Global reset (box-sizing, margin, padding), html/body base, ::selection,
-    scrollbar styling, button font, range input reset and thumb/track styling
-    (WebKit + Moz).
+  - [data-theme="light"] overrides with light palette.
+  - Global reset, html/body base, ::selection, scrollbar styling, button font,
+    range input reset and thumb/track styling (WebKit + Moz).
+  - @keyframes wordEnter for word entrance.
+  - .focus-blur-transition, .focus-blur: when playing, non-focal UI is blurred and
+    dimmed (filter, opacity, pointer-events: none).
 
 --- vitest.config.ts
   - Test environment: node. Include: lib/**/*.test.ts.
-  - Resolve alias @ → project root so tests can use same @/ imports if needed
-    (current tests use relative imports within lib/).
+  - Resolve alias @ → project root for @/ imports in tests (current tests use
+    relative imports within lib/).
 
 --- next.config.js
   - reactStrictMode: true. No other custom config.
@@ -160,22 +168,29 @@ Key behaviors:
 5. DATA FLOW
 ================================================================================
 
-  Upload path:
-    User selects/drops PDF → handleFile in index.tsx → POST /api/parse-pdf
-    with FormData("pdf", file) → parse-pdf.ts uses formidable → pdf-parse
-    → cleanExtractedPdfText + countWords → JSON { text, pages, wordCount }
-    → index.tsx setReader + setIndex(0), persist to STORAGE_KEY.
+  Upload path (PDF):
+    User selects/drops PDF → handleFile in index.tsx → FileReader.readAsArrayBuffer
+    → pdfjs-dist.getDocument({ data: arrayBuffer }) → getPage(i).getTextContent()
+    → per-page text joined; full text → cleanExtractedPdfText + countWords.
+    getOutline() → collectOutlineItems → page index → chapterWordIndex → chapters.
+    setReader(state), setIndex(0), persist to STORAGE_KEY.
+
+  Upload path (EPUB):
+    User selects/drops EPUB → handleFile → URL.createObjectURL → epubjs(blobUrl)
+    → spine sections loaded, HTML stripped to plain text; navigation.toc → word
+    offsets per chapter. setReader(state), setIndex(0), persist; URL.revokeObjectURL.
 
   Read path:
     reader.text + prefs.chunkSize → tokenize → buildChunks → setChunks.
     index + chunks drive: current chunk display, progress bar (progressPercent,
-    wordsReadEstimate, minutesRemaining), and interval-based advancement when
-    playing.
+    wordsReadEstimate, minutesRemaining), chapter selector (word index → chapter),
+    and interval-based advancement when playing.
 
   Persistence:
     PREFS_KEY: { wpm, chunkSize, fontSize }.
-    STORAGE_KEY: { readerState: { text, fileName, wordCount, pages }, savedIndex }.
-    Both written on change (after mount); session read once on mount.
+    STORAGE_KEY: { readerState: { text, fileName, wordCount, pages, chapters }, savedIndex }.
+    rsvp_theme: 'dark' | 'light'.
+    All written on change (after mount); session and prefs read once on mount.
 
 ================================================================================
 6. RUNNING AND TESTING
@@ -184,9 +199,9 @@ Key behaviors:
   Install:    npm install
   Dev:        npm run dev          → http://localhost:3000
   Build:      npm run build
-  Start:      npm start           → production server
-  Test:       npm test            → vitest run (lib/*.test.ts)
-  Watch:      npm run test:watch  → vitest in watch mode
+  Start:      npm start            → production server
+  Test:       npm test             → vitest run (lib/*.test.ts)
+  Watch:      npm run test:watch   → vitest in watch mode
 
   New tests: add *.test.ts under lib/; they are picked up by vitest.config.ts.
 
@@ -194,15 +209,15 @@ Key behaviors:
 7. EXTENDING THE PROJECT
 ================================================================================
 
-  - New API routes: add under pages/api/<name>.ts; export default handler(req, res).
+  - New API routes: add under pages/api/<name>.ts if needed; currently none.
   - New pages: add under pages/ (e.g. pages/about.tsx).
   - Reusable UI: consider a components/ folder and import into pages or _app.
-  - Shared logic: keep it in lib/ and unit-test; import in pages or API routes.
-  - PDF/text behavior: change lib/pdfText.ts and/or parse-pdf.ts; keep word
-    count and cleanup in sync with lib/rsvp tokenization.
-  - Styling: globals.css for variables and base styles; index.tsx uses inline
-    styles keyed off those variables. For new components, re-use the same
-    vars for consistency.
+  - Shared logic: keep it in lib/ and unit-test; import in pages.
+  - PDF/EPUB behavior: change parsing in index.tsx (handleFile); keep word count
+    and cleanup in sync with lib/pdfText and lib/rsvp tokenization.
+  - Styling: globals.css for variables (dark + light) and base styles; index.tsx
+    uses inline styles keyed off those variables. For new components, re-use the
+    same vars for consistency.
 
 ================================================================================
 8. IMPORTANT CONSTANTS (in code)
@@ -212,9 +227,10 @@ Key behaviors:
     STORAGE_KEY = 'rsvp_session'   — localStorage key for session
     PREFS_KEY   = 'rsvp_prefs'     — localStorage key for preferences
     DEFAULT_PREFS = { wpm: 300, chunkSize: 1, fontSize: 52 }
+    Theme key: localStorage 'rsvp_theme' ('dark' | 'light')
 
-  In pages/api/parse-pdf.ts:
-    Form field name for file: "pdf"
-    Max file size: 50 * 1024 * 1024 (50 MB)
+  Upload:
+    Accepted file types: .pdf, .epub (via accept=".pdf,.epub" and name check).
+    No server-side size limit enforced in this codebase (browser handles file).
 
 ================================================================================

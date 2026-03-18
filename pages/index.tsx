@@ -239,77 +239,27 @@ export default function Home() {
         setIndex(0)
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerState: state, savedIndex: 0 }))
       } else {
-        const blobUrl = URL.createObjectURL(file)
-        try {
-          const { default: ePub } = await import('epubjs')
-          const book = ePub(blobUrl)
-          await book.ready
-
-          const spine = book.spine
-          const spineWordCounts: number[] = []
-          const spineTexts: string[] = []
-
-          function stripHtml(html: string): string {
-            return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-          }
-
-          const hrefToIdx = new Map<string, number>()
-
-          for (let i = 0; i < spine.length; i++) {
-            const section = spine.get(i)
-            const href = String(section?.href ?? '')
-            if (href) {
-              hrefToIdx.set(href, i)
-              const filename = href.split('/').pop() ?? ''
-              if (filename) hrefToIdx.set(filename, i)
-            }
-            const contents = await section.load(book.load.bind(book))
-            const raw = contents?.textContent ?? ''
-            const plain = stripHtml(raw)
-            spineTexts.push(plain)
-            spineWordCounts.push(countWords(plain))
-          }
-
-          const fullText = spineTexts.join('\n\n')
-          const wordCount = countWords(fullText)
-          const numPages = spine.length
-
-          const chapters: ChapterItem[] = []
-          const toc = book.navigation?.toc ?? []
-          for (const tocEntry of toc) {
-            const title = (tocEntry as { title?: string }).title
-            if (!title) continue
-            const href = String((tocEntry as { href?: string }).href ?? '')
-            const baseHref = href.split('#')[0]
-            const spineIdx =
-              hrefToIdx.get(baseHref) ??
-              hrefToIdx.get(baseHref.split('/').pop() ?? '') ??
-              0
-
-            let wordIndex = 0
-            for (let j = 0; j < spineIdx; j++) {
-              wordIndex += spineWordCounts[j]
-            }
-
-            chapters.push({ title, wordIndex })
-          }
-
-          const state: ReaderState = {
-            text: fullText,
-            fileName: file.name,
-            wordCount,
-            pages: numPages,
-            chapters,
-          }
-          setReader(state)
-          setIndex(0)
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerState: state, savedIndex: 0 }))
-        } finally {
-          URL.revokeObjectURL(blobUrl)
+        const formData = new FormData()
+        formData.append('epub', file)
+        const res = await fetch('/api/parse-epub', { method: 'POST', body: formData })
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}))
+          throw new Error(data.error ?? `Upload failed: ${res.status}`)
         }
+        const { text, pages, wordCount, chapters } = await res.json()
+        const state: ReaderState = {
+          text,
+          fileName: file.name,
+          wordCount,
+          pages,
+          chapters: chapters ?? [],
+        }
+        setReader(state)
+        setIndex(0)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerState: state, savedIndex: 0 }))
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to parse PDF')
+      setError(e instanceof Error ? e.message : 'Failed to parse file')
     } finally {
       setLoading(false)
     }
@@ -416,7 +366,7 @@ export default function Home() {
           {!reader && (
             <div style={styles.uploadSection}>
               <p style={styles.uploadEyebrow}>Begin your session</p>
-              <h1 style={styles.uploadHeading}>Upload a PDF</h1>
+              <h1 style={styles.uploadHeading}>Upload a PDF or EPUB</h1>
               <p style={styles.uploadSub}>
                 Your book stays on your machine. Nothing is sent to any server except for local parsing.
               </p>
@@ -466,10 +416,10 @@ export default function Home() {
             <div style={styles.uploadSection}>
               <p style={styles.uploadHeading}>No text found</p>
               <p style={styles.uploadSub}>
-                This PDF has no extractable text (it may be scanned images only). Try another file.
+                This PDF or EPUB has no extractable text (it may be scanned images only). Try another file.
               </p>
               <button type="button" style={styles.ghostBtn} onClick={clearBook}>
-                Upload another PDF
+                Upload another file
               </button>
             </div>
           )}
