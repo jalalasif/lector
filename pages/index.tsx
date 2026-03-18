@@ -7,6 +7,7 @@ import {
   wordsReadEstimate,
   minutesRemaining,
 } from '@/lib/rsvp'
+import { sounds } from '@/lib/sounds'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ChapterItem {
@@ -116,6 +117,7 @@ export default function Home() {
       intervalRef.current = setInterval(() => {
         setIndex(prev => {
           if (prev >= chunks.length - 1) {
+            sounds.pause()
             setPlaying(false)
             return prev
           }
@@ -180,10 +182,15 @@ export default function Home() {
 
   const togglePlay = useCallback(() => {
     setIndex(i => (chunks.length > 0 && i >= chunks.length - 1 ? 0 : i))
-    setPlaying(p => !p)
+    setPlaying(p => {
+      if (p) sounds.pause()
+      else sounds.play()
+      return !p
+    })
   }, [chunks.length])
 
   const reset = () => {
+    sounds.toggle()
     setPlaying(false)
     setIndex(0)
   }
@@ -223,7 +230,7 @@ export default function Home() {
             <div style={styles.headerActions}>
               <button
                 style={styles.ghostBtn}
-                onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
+                onClick={() => { sounds.toggle(); setTheme(t => (t === 'dark' ? 'light' : 'dark')) }}
                 title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
                 aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               >
@@ -246,7 +253,7 @@ export default function Home() {
                 )}
               </button>
               {reader && (
-                <button style={styles.ghostBtn} onClick={clearBook} title="Load a new book">
+                <button style={styles.ghostBtn} onClick={() => { sounds.toggle(); clearBook() }} title="Load a new book">
                   New Book
                 </button>
               )}
@@ -271,7 +278,7 @@ export default function Home() {
                 onDragOver={e => { e.preventDefault(); setDragOver(true) }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={onDrop}
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => { sounds.toggle(); fileInputRef.current?.click() }}
               >
                 {loading ? (
                   <div style={styles.loadingWrap}>
@@ -418,7 +425,7 @@ export default function Home() {
                 </button>
 
                 {/* Step back */}
-                <button style={styles.controlBtn} onClick={() => { setPlaying(false); setIndex(i => Math.max(0, i - 1)) }}>
+                <button style={styles.controlBtn} onClick={() => { sounds.step(); setPlaying(false); setIndex(i => Math.max(0, i - 1)) }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="15 18 9 12 15 6"/>
                   </svg>
@@ -439,14 +446,14 @@ export default function Home() {
                 </button>
 
                 {/* Step forward */}
-                <button style={styles.controlBtn} onClick={() => { setPlaying(false); setIndex(i => Math.min(chunks.length - 1, i + 1)) }}>
+                <button style={styles.controlBtn} onClick={() => { sounds.step(); setPlaying(false); setIndex(i => Math.min(chunks.length - 1, i + 1)) }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="9 18 15 12 9 6"/>
                   </svg>
                 </button>
 
                 {/* Settings toggle */}
-                <button style={styles.controlBtn} onClick={() => setShowSettings(s => !s)} title="Settings">
+                <button style={styles.controlBtn} onClick={() => { sounds.toggle(); setShowSettings(s => !s) }} title="Settings">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                     <circle cx="12" cy="12" r="3"/>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -488,7 +495,7 @@ export default function Home() {
                         <button
                           key={n}
                           style={{ ...styles.chunkBtn, ...(prefs.chunkSize === n ? styles.chunkBtnActive : {}) }}
-                          onClick={() => setPrefs(p => ({ ...p, chunkSize: n }))}
+                          onClick={() => { sounds.toggle(); setPrefs(p => ({ ...p, chunkSize: n })) }}
                         >
                           {n === 1 ? 'Single word' : `${n}-word chunks`}
                         </button>
