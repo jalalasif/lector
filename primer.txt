@@ -1,0 +1,220 @@
+================================================================================
+RSVP READER (LECTOR) — PROJECT PRIMER
+================================================================================
+For developers joining the project. Use this file to understand the codebase,
+file layout, and how the pieces fit together.
+
+================================================================================
+1. PROJECT OVERVIEW
+================================================================================
+
+Lector is an RSVP (Rapid Serial Visual Presentation) speed-reading web app.
+Users upload a PDF; the app extracts text and displays it one word (or small
+chunk of words) at a time at a configurable speed. All processing is local:
+PDF parsing runs in a Next.js API route on the same machine; no text is sent
+to external services. Session state (current book + position) and preferences
+(WPM, chunk size, font size) are stored in the browser’s localStorage.
+
+Key behaviors:
+  - PDF upload via drag-and-drop or file picker (max 50 MB).
+  - Display modes: single word, 2-word chunks, or 3-word chunks.
+  - Speed: 100–1000 WPM via slider.
+  - Font size: 28px–96px.
+  - Progress bar: words read, percentage, estimated time remaining.
+  - Resume: last book and position restored from localStorage on load.
+  - Keyboard: Space = play/pause, Left/Right = step backward/forward.
+
+================================================================================
+2. TECH STACK
+================================================================================
+
+  - Next.js 14 (Pages Router)
+  - React 18
+  - TypeScript (strict)
+  - pdf-parse — PDF text extraction (server-side only)
+  - formidable — multipart form parsing for file uploads
+  - Vitest — unit tests for lib/ helpers
+
+================================================================================
+3. FILE STRUCTURE (SOURCE)
+================================================================================
+
+  rsvp-reader/
+  ├── .gitignore
+  ├── next.config.js          # Next.js config (reactStrictMode)
+  ├── package.json             # Scripts, deps, devDeps
+  ├── primer.txt              # This file
+  ├── README.md                # User-facing setup and features
+  ├── tsconfig.json            # TypeScript + path alias @/* → ./
+  ├── vitest.config.ts         # Vitest: node env, lib/**/*.test.ts, @ alias
+  │
+  ├── lib/                     # Shared, testable logic (no React/Next)
+  │   ├── rsvp.ts              # Tokenization, chunking, progress, time estimates
+  │   ├── rsvp.test.ts         # Unit tests for rsvp.ts
+  │   ├── pdfText.ts           # PDF text cleanup and word count
+  │   └── pdfText.test.ts      # Unit tests for pdfText.ts
+  │
+  ├── pages/                   # Next.js Pages Router
+  │   ├── _app.tsx             # App shell; imports globals.css
+  │   ├── index.tsx            # Single page: upload UI + reader UI + logic
+  │   └── api/
+  │       └── parse-pdf.ts     # POST API: accept PDF, return { text, pages, wordCount }
+  │
+  └── styles/
+      └── globals.css          # CSS variables, reset, fonts, range inputs
+
+  Generated / ignored (not in repo):
+  - .next/                     # Next build output
+  - node_modules/               # Dependencies
+  - next-env.d.ts               # Next-generated TypeScript env (optional commit)
+
+================================================================================
+4. MAJOR FILES — WHAT EACH DOES
+================================================================================
+
+--- pages/_app.tsx
+  - Root component for every page.
+  - Imports ../styles/globals.css so CSS variables and base styles apply app-wide.
+  - Renders <Component {...pageProps} /> (no layout wrapper or providers).
+
+--- pages/index.tsx
+  - The only page: upload + reader UI and all client state.
+  - State: reader (extracted text + metadata or null), prefs (wpm, chunkSize, fontSize),
+    chunks (array of strings), index (current chunk), playing, dragOver, loading,
+    error, showSettings, mounted.
+  - On mount: reads localStorage (PREFS_KEY, STORAGE_KEY), restores prefs and
+    last session (reader + index).
+  - When reader or chunkSize changes: tokenizes reader.text via lib/rsvp,
+    builds chunks, rescales index proportionally.
+  - Persists: prefs and session (reader + index) to localStorage when they change.
+  - Playback: when playing is true, a setInterval advances index at (60000/wpm)*chunkSize
+    ms per chunk; stops at last chunk.
+  - Upload: handleFile validates .pdf, POSTs to /api/parse-pdf with FormData,
+    then sets reader and index to 0.
+  - Renders:
+    - Header with wordmark and “New Book” when a book is loaded.
+    - If !reader: upload section (drop zone, file input, error message).
+    - If reader && chunks.length === 0: “No text found” + button to clear and re-upload.
+    - If reader && chunks.length > 0: book meta, progress bar, word/chunk display,
+      play/pause/step/settings controls, settings panel (WPM, chunk size, font size),
+      keyboard hint.
+  - KeyboardHandler: listens for Space / ArrowLeft / ArrowRight when a book is
+    loaded and chunks exist; triggers togglePlay and step handlers.
+  - Styles: large inline “styles” object (React.CSSProperties) using CSS vars
+    from globals.css (e.g. --bg, --text, --gold). Inline keyframe + class for
+    word flash and spinner.
+
+--- pages/api/parse-pdf.ts
+  - Next.js API route: POST only; body is multipart with field "pdf" (file).
+  - Disables Next’s default body parser (config.api.bodyParser = false) so
+    formidable can read the raw request.
+  - Uses formidable to parse the request (max 50 MB); gets the first file from
+    files.pdf (array or single file).
+  - Reads file from temp filepath into a Buffer, requires pdf-parse dynamically,
+    extracts text and numpages.
+  - Runs cleaned text through lib/pdfText (cleanExtractedPdfText, countWords)
+    and returns JSON: { text, pages, wordCount }.
+  - Always deletes the temp upload file in a finally block.
+  - Errors: 405 for non-POST, 400 when no PDF, 500 on parse/form errors; avoids
+    double response when headers already sent.
+
+--- lib/rsvp.ts
+  - Pure functions used by the UI (and tests). No React, no Node APIs.
+  - tokenize(text): split on whitespace, filter empty → string[].
+  - buildChunks(words, size): for size 1 returns words; for 2/3 returns array of
+    "word1 word2" etc.; last chunk may be shorter.
+  - progressPercent(index, totalChunks): 0–100; avoids division by zero when
+    totalChunks is 0 or 1 (single chunk = 100%).
+  - wordsReadEstimate(index, totalChunks, totalWords): approximate words “read”
+    for progress display.
+  - minutesRemaining(index, totalChunks, chunkSize, wpm): estimated minutes left;
+    guards wpm with Math.max(1, wpm).
+
+--- lib/pdfText.ts
+  - cleanExtractedPdfText(raw): normalizes \r\n → \n, collapses 3+ newlines to
+    \n\n, trims. Used on server after pdf-parse.
+  - countWords(text): same definition as UI (split on whitespace, filter Boolean).
+  Ensures API and UI use the same word count.
+
+--- styles/globals.css
+  - Imports Cormorant Garamond from Google Fonts.
+  - :root defines palette: --bg, --text, --gold, --gold-dim, --gold-border,
+    --surface, --surface-2, --muted, --muted-2.
+  - Global reset (box-sizing, margin, padding), html/body base, ::selection,
+    scrollbar styling, button font, range input reset and thumb/track styling
+    (WebKit + Moz).
+
+--- vitest.config.ts
+  - Test environment: node. Include: lib/**/*.test.ts.
+  - Resolve alias @ → project root so tests can use same @/ imports if needed
+    (current tests use relative imports within lib/).
+
+--- next.config.js
+  - reactStrictMode: true. No other custom config.
+
+--- tsconfig.json
+  - Path alias "@/*" → "./*" so imports like @/lib/rsvp resolve.
+  - strict, noEmit, jsx preserve for Next; includes next-env.d.ts and .next/types.
+
+================================================================================
+5. DATA FLOW
+================================================================================
+
+  Upload path:
+    User selects/drops PDF → handleFile in index.tsx → POST /api/parse-pdf
+    with FormData("pdf", file) → parse-pdf.ts uses formidable → pdf-parse
+    → cleanExtractedPdfText + countWords → JSON { text, pages, wordCount }
+    → index.tsx setReader + setIndex(0), persist to STORAGE_KEY.
+
+  Read path:
+    reader.text + prefs.chunkSize → tokenize → buildChunks → setChunks.
+    index + chunks drive: current chunk display, progress bar (progressPercent,
+    wordsReadEstimate, minutesRemaining), and interval-based advancement when
+    playing.
+
+  Persistence:
+    PREFS_KEY: { wpm, chunkSize, fontSize }.
+    STORAGE_KEY: { readerState: { text, fileName, wordCount, pages }, savedIndex }.
+    Both written on change (after mount); session read once on mount.
+
+================================================================================
+6. RUNNING AND TESTING
+================================================================================
+
+  Install:    npm install
+  Dev:        npm run dev          → http://localhost:3000
+  Build:      npm run build
+  Start:      npm start           → production server
+  Test:       npm test            → vitest run (lib/*.test.ts)
+  Watch:      npm run test:watch  → vitest in watch mode
+
+  New tests: add *.test.ts under lib/; they are picked up by vitest.config.ts.
+
+================================================================================
+7. EXTENDING THE PROJECT
+================================================================================
+
+  - New API routes: add under pages/api/<name>.ts; export default handler(req, res).
+  - New pages: add under pages/ (e.g. pages/about.tsx).
+  - Reusable UI: consider a components/ folder and import into pages or _app.
+  - Shared logic: keep it in lib/ and unit-test; import in pages or API routes.
+  - PDF/text behavior: change lib/pdfText.ts and/or parse-pdf.ts; keep word
+    count and cleanup in sync with lib/rsvp tokenization.
+  - Styling: globals.css for variables and base styles; index.tsx uses inline
+    styles keyed off those variables. For new components, re-use the same
+    vars for consistency.
+
+================================================================================
+8. IMPORTANT CONSTANTS (in code)
+================================================================================
+
+  In pages/index.tsx:
+    STORAGE_KEY = 'rsvp_session'   — localStorage key for session
+    PREFS_KEY   = 'rsvp_prefs'     — localStorage key for preferences
+    DEFAULT_PREFS = { wpm: 300, chunkSize: 1, fontSize: 52 }
+
+  In pages/api/parse-pdf.ts:
+    Form field name for file: "pdf"
+    Max file size: 50 * 1024 * 1024 (50 MB)
+
+================================================================================
