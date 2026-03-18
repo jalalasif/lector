@@ -115,8 +115,10 @@ export default function Home() {
 
   // ── Upload handler
   const handleFile = useCallback(async (file: File) => {
-    if (!file.name.endsWith('.pdf')) {
-      setError('Please upload a PDF file.')
+    const isEpub = file.name.endsWith('.epub')
+    const isPdf = file.name.endsWith('.pdf')
+    if (!isPdf && !isEpub) {
+      setError('Please upload a PDF or EPUB file.')
       return
     }
     setLoading(true)
@@ -124,10 +126,11 @@ export default function Home() {
     setPlaying(false)
 
     const formData = new FormData()
-    formData.append('pdf', file)
+    formData.append(isEpub ? 'epub' : 'pdf', file)
 
     try {
-      const res = await fetch('/api/parse-pdf', { method: 'POST', body: formData })
+      const endpoint = isEpub ? '/api/parse-epub' : '/api/parse-pdf'
+      const res = await fetch(endpoint, { method: 'POST', body: formData })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Parse failed')
 
@@ -242,7 +245,7 @@ export default function Home() {
                         <line x1="9" y1="15" x2="15" y2="15"/>
                       </svg>
                     </div>
-                    <p style={styles.dropText}>Drop your PDF here</p>
+                    <p style={styles.dropText}>Drop a PDF or EPUB here</p>
                     <p style={styles.dropSub}>or click to browse</p>
                   </>
                 )}
@@ -253,7 +256,7 @@ export default function Home() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf"
+                accept=".pdf,.epub"
                 style={{ display: 'none' }}
                 onChange={onFileChange}
               />
