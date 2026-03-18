@@ -33,6 +33,11 @@ npm test
 
 ## Notes
 
-- PDF parsing happens via a local Next.js API route using `pdf-parse`
+- PDF parsing runs entirely in the browser using `pdfjs-dist`; no server upload needed
+- EPUB parsing uses a Next.js API route (`/api/parse-epub`)
 - No data is sent to any external server
 - Session (book + position) is stored in browser localStorage
+
+## Deploying to Vercel
+
+Run `vercel` or connect the GitHub repo. PDF parsing runs entirely in the browser — no server config needed. EPUB parsing uses a serverless function and works within Vercel's default limits.

@@ -6,7 +6,9 @@ import {
   progressPercent,
   wordsReadEstimate,
   minutesRemaining,
+  chapterWordIndex,
 } from '@/lib/rsvp'
+import { cleanExtractedPdfText, countWords } from '@/lib/pdfText'
 import { sounds } from '@/lib/sounds'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -142,25 +144,118 @@ export default function Home() {
     setError(null)
     setPlaying(false)
 
-    const formData = new FormData()
-    formData.append(isEpub ? 'epub' : 'pdf', file)
-
     try {
-      const endpoint = isEpub ? '/api/parse-epub' : '/api/parse-pdf'
-      const res = await fetch(endpoint, { method: 'POST', body: formData })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Parse failed')
+      if (isPdf) {
+        const pdfjsLib = await import('pdfjs-dist')
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
 
-      const state: ReaderState = {
-        text: data.text,
-        fileName: file.name,
-        wordCount: data.wordCount,
-        pages: data.pages,
-        chapters: data.chapters ?? [],
+        const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as ArrayBuffer)
+          reader.onerror = () => reject(reader.error)
+          reader.readAsArrayBuffer(file)
+        })
+
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+        const pdf = await loadingTask.promise
+        const numPages = pdf.numPages
+
+        const pageTexts: string[] = []
+        const pageWordCounts: number[] = []
+
+        for (let i = 1; i <= numPages; i++) {
+          const page = await pdf.getPage(i)
+          const content = await page.getTextContent()
+          const pageText = (content.items as { str?: string }[])
+            .map(item => item.str ?? '')
+            .join(' ')
+          pageTexts.push(pageText)
+          pageWordCounts.push(countWords(pageText))
+        }
+
+        const fullText = pageTexts.join('\n')
+        const text = cleanExtractedPdfText(fullText)
+        const wordCount = countWords(text)
+
+        type OutlineNode = { title?: string; dest?: string | unknown[] | null; items?: OutlineNode[] }
+        function collectOutlineItems(nodes: OutlineNode[] | null | undefined): { title: string; dest: string | unknown[] | null }[] {
+          if (!nodes || !Array.isArray(nodes)) return []
+          const result: { title: string; dest: string | unknown[] | null }[] = []
+          for (const node of nodes) {
+            if (node.title) {
+              result.push({ title: node.title, dest: node.dest ?? null })
+            }
+            if (node.items?.length) {
+              result.push(...collectOutlineItems(node.items))
+            }
+          }
+          return result
+        }
+        function isRefLike(v: unknown): v is { num: number; gen: number } {
+          return (
+            v !== null &&
+            typeof v === 'object' &&
+            'num' in v &&
+            'gen' in v &&
+            typeof (v as { num: unknown }).num === 'number' &&
+            typeof (v as { gen: unknown }).gen === 'number'
+          )
+        }
+
+        let chapters: ChapterItem[] = []
+        const rawOutline = await pdf.getOutline()
+        const items = collectOutlineItems(rawOutline as OutlineNode[] | null)
+        if (items.length > 0) {
+          for (const item of items) {
+            let pageIndex = 0
+            try {
+              if (Array.isArray(item.dest) && item.dest.length > 0) {
+                const ref = item.dest[0]
+                if (isRefLike(ref)) {
+                  pageIndex = await pdf.getPageIndex(ref)
+                }
+              } else if (typeof item.dest === 'string') {
+                const destArray = await pdf.getDestination(item.dest)
+                if (destArray && Array.isArray(destArray) && destArray.length > 0 && isRefLike(destArray[0])) {
+                  pageIndex = await pdf.getPageIndex(destArray[0])
+                }
+              }
+            } catch {
+              pageIndex = 0
+            }
+            const wordIdx = chapterWordIndex(pageIndex, pageWordCounts)
+            chapters.push({ title: item.title, wordIndex: wordIdx })
+          }
+        }
+
+        const state: ReaderState = {
+          text,
+          fileName: file.name,
+          wordCount,
+          pages: numPages,
+          chapters,
+        }
+        setReader(state)
+        setIndex(0)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerState: state, savedIndex: 0 }))
+      } else {
+        const formData = new FormData()
+        formData.append('epub', file)
+        const res = await fetch('/api/parse-epub', { method: 'POST', body: formData })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error ?? 'Parse failed')
+
+        const state: ReaderState = {
+          text: data.text,
+          fileName: file.name,
+          wordCount: data.wordCount,
+          pages: data.pages,
+          chapters: data.chapters ?? [],
+        }
+        setReader(state)
+        setIndex(0)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerState: state, savedIndex: 0 }))
       }
-      setReader(state)
-      setIndex(0)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ readerState: state, savedIndex: 0 }))
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to parse PDF')
     } finally {
