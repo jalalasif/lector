@@ -1,6 +1,3 @@
-// No type definitions available for epub2
-declare module 'epub2'
-
 import type { NextApiRequest, NextApiResponse } from 'next'
 import formidable from 'formidable'
 import fs from 'fs'
