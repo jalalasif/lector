@@ -12,6 +12,18 @@
   --muted-2: rgba(245, 240, 235, 0.15);
 }
 
+[data-theme="light"] {
+  --bg: #f7f3ee;
+  --text: #1a1814;
+  --gold: #9a6f2e;
+  --gold-dim: rgba(154, 111, 46, 0.12);
+  --gold-border: rgba(154, 111, 46, 0.3);
+  --surface: #ede8e1;
+  --surface-2: #e4ddd4;
+  --muted: rgba(26, 24, 20, 0.45);
+  --muted-2: rgba(26, 24, 20, 0.12);
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

@@ -45,6 +45,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -53,6 +54,9 @@ export default function Home() {
   useEffect(() => {
     setMounted(true)
     try {
+      const savedTheme = localStorage.getItem('rsvp_theme')
+      if (savedTheme === 'light' || savedTheme === 'dark') setTheme(savedTheme)
+
       const savedPrefs = localStorage.getItem(PREFS_KEY)
       if (savedPrefs) setPrefs(JSON.parse(savedPrefs))
 
@@ -67,6 +71,17 @@ export default function Home() {
       }
     } catch (_) {}
   }, [])
+
+  // ── Apply theme to document and persist
+  useEffect(() => {
+    if (!mounted) return
+    localStorage.setItem('rsvp_theme', theme)
+    if (theme === 'light') {
+      document.documentElement.dataset.theme = 'light'
+    } else {
+      delete document.documentElement.dataset.theme
+    }
+  }, [theme, mounted])
 
   // ── Rebuild chunks when text or chunkSize changes
   useEffect(() => {
@@ -204,11 +219,37 @@ export default function Home() {
               <span style={styles.wordmarkL}>L</span>
               <span style={styles.wordmarkRest}>ector</span>
             </div>
-            {reader && (
-              <button style={styles.ghostBtn} onClick={clearBook} title="Load a new book">
-                New Book
+            <div style={styles.headerActions}>
+              <button
+                style={styles.ghostBtn}
+                onClick={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))}
+                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                {theme === 'dark' ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="5"/>
+                    <line x1="12" y1="1" x2="12" y2="3"/>
+                    <line x1="12" y1="21" x2="12" y2="23"/>
+                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                    <line x1="1" y1="12" x2="3" y2="12"/>
+                    <line x1="21" y1="12" x2="23" y2="12"/>
+                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                  </svg>
+                )}
               </button>
-            )}
+              {reader && (
+                <button style={styles.ghostBtn} onClick={clearBook} title="Load a new book">
+                  New Book
+                </button>
+              )}
+            </div>
           </div>
           <div style={styles.headerRule} />
         </header>
@@ -560,6 +601,11 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--gold)',
   },
   wordmarkRest: {},
+  headerActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
   headerRule: {
     height: '1px',
     background: 'linear-gradient(90deg, var(--gold-border) 0%, transparent 100%)',
